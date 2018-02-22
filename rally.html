@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Sprint Rollup</title>
+    <script type="text/javascript" src="/slm/attachment/67620374400/jquery.min.js"></script>
+
+
+    <script type="text/javascript" src="/slm/attachment/68465873436/jquery.multiple.select.js"></script>
+    <link rel="stylesheet" type="text/css" href="/slm/attachment/68505161332/multiple-select.css" />
+
+
+    <script type="text/javascript" src="/slm/attachment/67618166780/jquery.jqChart.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="/slm/attachment/67618177484/jquery.jqChart.css" />
+
+
+    <script type="text/javascript" src="https://cdn.datatables.net/1.10.12/js/jquery.dataTables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.2.2/js/dataTables.buttons.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.2.2/js/buttons.flash.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/2.5.0/jszip.min.js"></script>
+    <script type="text/javascript" src="https://cdn.rawgit.com/bpampuch/pdfmake/0.1.18/build/pdfmake.min.js"></script>
+    <script type="text/javascript" src="https://cdn.rawgit.com/bpampuch/pdfmake/0.1.18/build/vfs_fonts.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.2.2/js/buttons.html5.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.2.2/js/buttons.print.min.js"></script>
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/1.2.2/css/buttons.dataTables.min.css" />
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.12/css/jquery.dataTables.min.css" />
+
+    <script type="text/javascript">
+        $(document).ready(function () {
+            var userstoryurl = 'https://domainhostname/slm/webservice/v2.0/hierarchicalrequirement?query=(Project.ObjectID = "projectid")&fetch=Release,Iteration,ScheduleState,PlanEstimate,FormattedID,Defects,DefectStatus,RevisionHistory&order=CreationDate desc&start=1&pagesize=2000';
+            var iterationurl = 'https://domainhostname/slm/webservice/v2.0/iteration?query=(Project.ObjectID = "projectid")&fetch=PlanEstimate,PlannedVelocity,StartDate,EndDate&order=StartDate desc&start=1&pagesize=2000';
+            var releaseurl = 'https://domainhostname/slm/webservice/v2.0/release?query=(Project.ObjectID = "projectid")&fetch=ReleaseDate,ReleaseStartDate&order=ReleaseDate desc&start=1&pagesize=2000';
+            var blockerlookbackurl = 'https://domainhostname/analytics/v2.0/service/rally/workspace/41938821272/artifact/snapshot/query.js?find={"_ProjectHierarchy":projectid,"_TypeHierarchy":"HierarchicalRequirement","Blocked":true}&fields=["ObjectID"]&start=0&pagesize=1000000';
+            var usrevisionhistoryurl = 'https://domainhostname/slm/webservice/v2.0/revision?query=(((Description contains "ITERATION added") OR (Description contains "ITERATION changed from")) AND (RevisionHistory.ObjectID = "usobjectid"))&fetch=CreationDate,Description,RevisionHistory&start=1&pagesize=2000';
+            var defectsurl = 'https://domainhostname/slm/webservice/v2.0/defect?query=((Project.ObjectID = "projectid") AND (State != "Closed"))&fetch=Iteration,Release&start=1&pagesize=2000';
+            var pstart = window.location.search.indexOf('=');
+            var pend = window.location.search.indexOf('&');
+            //get the current project id from the URL
+            var projectid = window.location.search.substring(pstart + 1, pend);
+
+            ///below condition will make sure appropriate urls are used when the environment is changed from
+            //development to production.
+            //in development environment below if condition is executed
+            if (window.location.hostname == 'localhost') {
+                userstoryurl = '/Scripts/ustotal.js';
+                iterationurl = '/Scripts/rawJson.js';
+                releaseurl = '/Scripts/Json.js';
+                blockerlookbackurl = '/Scripts/blockers.js';
+                projectid = 0;
+            } else {
+                userstoryurl = userstoryurl.replace("domainhostname", window.location.hostname);
+                iterationurl = iterationurl.replace("domainhostname", window.location.hostname);
+                releaseurl = releaseurl.replace("domainhostname", window.location.hostname);
+                blockerlookbackurl = blockerlookbackurl.replace("domainhostname", window.location.hostname);
+                usrevisionhistoryurl = usrevisionhistoryurl.replace("domainhostname", window.location.hostname);
+                defectsurl = defectsurl.replace("domainhostname", window.location.hostname);
+            }
+
+            
+            var userstory = [];
+            var release = [];
+            var iteration = [];
+            var blockers = [];
+            var totaldefects = [];
+            var usrevisionhistory = [];
+            var itergraphdata = [];
+            var graphdata = [];
+            var table = undefined;
+            var usfetched = false, iterfetched = false, relfetched = false, blkfetched = false, defectsfetched = false;
+            var downloadeduscount = 0;
+
+            $('#dwlstatus').show();
+            $('#dwlstatus').html('downloading required data...');
+
+            downloadUserStories(projectid);
+            downloadIterations(projectid);
+            downloadReleases(projectid);
+            downloadBlockers(projectid);
+            downloadDefects(projectid);
+
+
+            function downloadUserStories(projectid) {
+                $.getJSON(userstoryurl.replace("projectid", projectid), function (data) {
+                    userstory = data['QueryResult']['Results'];
+                    downloadeduscount = userstory.length;
+                    usfetched = true;
+                    formatdata();
+                });
+            }
+
+            function downloadIterations(projectid) {
+                $.getJSON(iterationurl.replace("projectid", projectid), function (data) {
+                    iteration = data['QueryResult']['Results'];
+                    iterfetched = true;
+                    formatdata();
+                });
+            }
+
+            function downloadReleases(projectid) {
+                $.getJSON(releaseurl.replace("projectid", projectid), function (data) {
+                    release = data['QueryResult']['Results'];
+                    relfetched = true;
+                    formatdata();
+                });
+            }
+
+            function downloadBlockers(projectid) {
+                $.getJSON(blockerlookbackurl.replace("projectid", projectid), function (data) {
+                    blockers = data['Results'];
+                    blkfetched = true;
+                    formatdata();
+                });
+            }
+
+            function downloadDefects(projectid) {
+                $.getJSON(defectsurl.replace("projectid", projectid), function (data) {
+                    totaldefects = data['QueryResult']['Results'];
+                    defectsfetched = true;
+                    formatdata();
+                });
+            }
+
+            function formatdata() {
+                if (!usfetched)
+                    $('#dwlstatus').html('fetching user stories...');
+                else if (!iterfetched)
+                    $('#dwlstatus').html('fetching iterations...');
+                else if (!relfetched)
+                    $('#dwlstatus').html('fetching releases...');
+                else if (!blkfetched)
+                    $('#dwlstatus').html('fetching blockers...');
+                else if (!defectsfetched)
+                        $('#dwlstatus').html('fetching defects...');
+                else {
+                    $('#dwlstatus').html('Ready to process...');
+                    formatRelease();
+                    formatIteration();
+                    formatBlocker();
+                    /*
+                        Before processing the user stories down load the revision history of all the user stories to find out
+                        if the user story is added to the current sprint(Iteration) after it has started, if 'yes' then these are the
+                        uncommitted stories.
+
+                        now the formatUserstory() function will be called with in  downloadRevisionHistoryOfUserstories() hence i have 
+                        commented out the function below.
+                    */
+                    downloadRevisionHistoryOfUserstories();
+                    //formatUserstory();
+                    
+                }
+            }
+
+            function formatRelease() {
+                /*
+                create a list of release objects like below
+                {"projectid":12345,"release":"releasename", "releaseid":456, "startdate":"2016-10-13", "enddate":"2016-11-24"}
+                */
+                var arr = release;
+                release = [];
+                for (var i = 0; i < arr.length; i++) {
+                    var relid = parseInt(arr[i]['_ref'].substring(arr[i]['_ref'].lastIndexOf("/") + 1));
+                    var json = '{"projectid":' + projectid + ', "release":"' + arr[i]['_refObjectName'] + '","releaseid":' + relid + ',"startdate":"' + arr[i]['ReleaseStartDate'].substring(0, 10) + '","enddate":"' + arr[i]['ReleaseDate'].substring(0, 10) + '" }';
+                    release.push(JSON.parse(json));
+                }
+
+                //below dummy release is needed to tie all the user stories which do not have a release associated to them
+                //all such user stories will be tied to this dummy release
+                var dummyrelease = '{"projectid":' + projectid + ',"release":"none", "releaseid":0, "startdate":"", "enddate":""}';
+                release.push(JSON.parse(dummyrelease));
+            }
+
+            function formatIteration() {
+                /*
+                create a list of iteration objects like below
+                {"projectid":12345,"iteration":"itername", "iterationid":456, "StartDate":"2015-11-02", "EndDate":"2015-12-01", "plannedest":20}
+                */
+                //debugger;
+                var arr = iteration;
+                iteration = [];
+                for (var i = 0; i < arr.length; i++) {
+                    var itrid = parseInt(arr[i]['_ref'].substring(arr[i]['_ref'].lastIndexOf("/") + 1));
+                    var plannedest = 0;
+                    if (arr[i]['PlannedVelocity'])
+                        plannedest = arr[i]['PlannedVelocity'];
+                    var json = '{"projectid":' + projectid + ', "iteration":"' + arr[i]['_refObjectName'] + '","iterationid":' + itrid + ',"StartDate":"' + arr[i]['StartDate'].substring(0, 10) + '", "EndDate":"' + arr[i]['EndDate'].substring(0, 10) + '","plannedest":' + plannedest + '}';
+                    iteration.push(JSON.parse(json));
+                }
+
+                //below dummy iteration is needed to tie all the user stories which do not have a iteration associated to them
+                //all such user stories will be tied to this dummy iteration
+                var dummyiteration = '{"projectid":' + projectid + ',"iteration":"none", "iterationid":0, "plannedest":0}';
+                iteration.push(JSON.parse(dummyiteration));
+                //console.log(iteration);
+            }
+
+            function formatBlocker() {
+                /*
+               create a list of blockers objects like below
+               {"projectid":12345,"userstoryid":"5476387"}
+               basically the blockers, selectedblockers arrays represents all the userstories that have been blocked atleast once in their life time.
+               */
+                var arr = blockers;
+                blockers = [];
+                for (var i = 0; i < arr.length; i++) {
+                    var json = '{"projectid":' + projectid + ',"userstoryid":' + arr[i]['ObjectID'] + '}';
+                    blockers.push(JSON.parse(json));
+                }                
+            }
+
+            function downloadRevisionHistoryOfUserstories() {
+                for (var i = 0; i < userstory.length; i++) {
+                    var usobjectid = parseInt(userstory[i]['RevisionHistory']['_ref'].substring(userstory[i]['RevisionHistory']['_ref'].lastIndexOf("/") + 1));
+                    $.getJSON(usrevisionhistoryurl.replace("usobjectid", usobjectid), function (data) {
+                        var usrv = data['QueryResult']['Results'];
+                        //console.log(data);
+                        formatrevisionhistory(usrv);
+                    });
+                }
+            }
+
+            function formatrevisionhistory(usrv) {
+                //console.log(usrv);                
+                downloadeduscount = downloadeduscount - 1;
+                $('#dwlstatus').html('fetching revision history of user stories ' + (userstory.length - downloadeduscount) + '/' + userstory.length);
+
+                for (var i = 0; i < usrv.length; i++) {
+                    //variable usrevisionhistory would be an array of json objects of below format
+                    //{"revisionid":"42979765954","creationdate":"2015-09-22","description":"ITERATION added [Sprint 3]"}
+                    var usobjid = parseInt(usrv[i]['RevisionHistory']['_ref'].substring(usrv[i]['RevisionHistory']['_ref'].lastIndexOf("/") + 1));
+                    var creationdate = usrv[i]['CreationDate'].substring(0, 10);
+                    var description = usrv[i]['Description'];
+                    var json = JSON.parse('{"revisionid":"' + usobjid + '","creationdate":"' + creationdate + '","description":"' + description + '"}');
+                    usrevisionhistory.push(json);
+                }
+                formatUserstory();
+                
+            }
+
+            function formatUserstory() {
+
+
+                /*
+                    below if statement will stop the formatting of user stories untill the revision history of all the user stories 
+                    is downloaded.
+                */
+
+                
+                if (downloadeduscount > 0)
+                    return;
+
+                
+
+                /*
+                After fetching all the user stories for the project, create an array of objects in below format
+                {"projectid":12345,
+                    "release":"release1","releaseid":"56789"
+                    "iterations":[{"iteration":"itr1","iterationid":234,"planestimate":64,"plancompleted":55,"storiescomitted":12,"storiescompleted":8,"stories":"US100,US2015,US5674","totalblockers":5,"currentblockers":0,"defects":0,"backlogitr":50},
+                                  {"iteration":"itr2","iterationid":789,"planestimate":77,"plancompleted":77,"storiescomitted":10,"storiescompleted":10,"stories":"US100,US2015,US5674","totalblockers":7,"currentblockers":2,"defects":2,"backlogitr":30},
+                                  {"iteration":"itr3","iterationid":456,"planestimate":62,"plancompleted":60,"storiescomitted":11,"storiescompleted":9,"stories":"US100,US2015,US5674","totalblockers":3,"currentblockers":1,"defects":3,"backlogitr":43}
+                                 ]
+                }
+
+                NOTE: backlogitr key in the "iterations" array will be calculated at the end, as this number is common to all the sprints.
+                */
+                
+                var backlogcnt = 0;
+                var results = userstory;
+                userstory = [];
+                for (var i = 0; i < results.length; i++) {
+                    //debugger;
+                    var item = results[i];
+                    var foundrelease = false;
+                    var founditeration = false;
+                    var json = "";
+                    var usstatus = 'none';
+                    var itrname = "none";
+                    var itrid = 0;
+                    var relname = "none";
+                    var relid = 0;
+                    var usid = item['FormattedID'];
+                    var blkcnt = item['Blocked'] ? 1 : 0;
+                    var defects = 0;
+                    if (item['DefectStatus'] == "SOME_CLOSED" || item['DefectStatus'] == "NONE_CLOSED")
+                        defects = item['Defects']['Count'];
+                    var planestimate = 0;
+                    var plancompleted = 0;
+                    var uscompleted = 0;
+                    var everblocked = iseverblocked(parseInt(item['_ref'].substring(item['_ref'].lastIndexOf("/") + 1)));
+                    var uscommited = true;
+
+                    if (item['Release'] && item['Release']['_refObjectName']) {
+                        relname = item['Release']['_refObjectName'];
+                        relid = parseInt(item['Release']['_ref'].substring(item['Release']['_ref'].lastIndexOf("/") + 1));
+                    }
+                    if (item['Iteration'] && item['Iteration']['_refObjectName']) {
+                        itrname = item['Iteration']['_refObjectName'];
+                        itrid = parseInt(item['Iteration']['_ref'].substring(item['Iteration']['_ref'].lastIndexOf("/") + 1));
+                    }
+
+                    //check if the user story is committed after the sprint has started
+                    if (item['RevisionHistory'] && itrname != "none") {
+                        var revid = parseInt(item['RevisionHistory']['_ref'].substring(item['RevisionHistory']['_ref'].lastIndexOf("/") + 1));
+                        uscommited = isuscommitted(revid, itrname, usid);
+                    }
+
+                    if (item['ScheduleState'])
+                        usstatus = item['ScheduleState'];
+                    if (item['PlanEstimate'])
+                        planestimate = item['PlanEstimate'];
+                    if (usstatus == "Accepted") {
+                        plancompleted = planestimate;
+                        uscompleted = 1;
+                    }
+
+
+                    //calculating backlog points.
+                    //user stories who are not tied to any iteration and
+                    //do not have an abandoned release and
+                    //status is not "Completed" or "Accepted" or "New"
+                    if (itrname == "none" && relname.toLowerCase().indexOf("abandoned") < 0 && usstatus != "New" && usstatus != "Completed" && usstatus != "Accepted") {
+                        backlogcnt = backlogcnt + planestimate;
+                        $('#bklgcnt').html('Current back log points count:' + backlogcnt);
+                    }
+
+                    //check if release is already added to the selecteduserstory array
+                    for (var j = 0; j < userstory.length; j++) {
+                        if (relid == userstory[j]['releaseid']) {
+                            foundrelease = true;
+
+                            //take all "iterations" from the json object for this release
+                            var releaseiterations = userstory[j]['iterations'];
+
+                            //check if this iteration is already added to the release
+                            //loop through all the "iterations" for this release
+                            for (var itr = 0; itr < releaseiterations.length; itr++) {
+                                var ri = releaseiterations[itr];
+                                if (ri['iterationid'] == itrid) {
+                                    founditeration = true;
+                                    userstory[j]['iterations'][itr]['planestimate'] = userstory[j]['iterations'][itr]['planestimate'] + (uscommited ? planestimate : 0);
+                                    userstory[j]['iterations'][itr]['plancompleted'] = userstory[j]['iterations'][itr]['plancompleted'] + plancompleted;
+                                    userstory[j]['iterations'][itr]['storiescomitted'] = userstory[j]['iterations'][itr]['storiescomitted'] + (uscommited ? 1 : 0);
+                                    userstory[j]['iterations'][itr]['storiescompleted'] = userstory[j]['iterations'][itr]['storiescompleted'] + uscompleted;
+                                    if (uscompleted == 1 && uscommited) //committed completed us
+                                        userstory[j]['iterations'][itr]['stories'] = userstory[j]['iterations'][itr]['stories'] + ',<b>' + usid+'</b>';
+                                    else if (uscompleted == 1 && !uscommited)//uncommitted completed us
+                                        userstory[j]['iterations'][itr]['stories'] = userstory[j]['iterations'][itr]['stories'] + ',<b><u>' + usid + '</u></b>';
+                                    else if (uscompleted == 0 && uscommited)//committed incomplete us
+                                        userstory[j]['iterations'][itr]['stories'] = userstory[j]['iterations'][itr]['stories'] + ',' + usid;
+                                    else //uncommitted incomplete us
+                                        userstory[j]['iterations'][itr]['stories'] = userstory[j]['iterations'][itr]['stories'] + ',<u>' + usid + '</u>';
+                                    userstory[j]['iterations'][itr]['totalblockers'] = userstory[j]['iterations'][itr]['totalblockers'] + everblocked;
+                                    userstory[j]['iterations'][itr]['currentblockers'] = userstory[j]['iterations'][itr]['currentblockers'] + blkcnt;
+                                    userstory[j]['iterations'][itr]['defects'] = userstory[j]['iterations'][itr]['defects'] + defects;
+                                }
+                            }
+
+                            //if the release exists but the iteration does not exists in the release
+                            // then add the iteration to the release
+                            if (!founditeration) {
+
+                                if (uscompleted == 1 && uscommited) //committed completed us
+                                    json = '{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"<b>' + usid + '</b>","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}';
+                                else if (uscompleted == 1 && !uscommited)//uncommitted completed us
+                                    json = '{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"<b><u>' + usid + '</u></b>","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}';
+                                else if (uscompleted == 0 && uscommited)//committed incomplete us
+                                    json = '{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"' + usid + '","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}';
+                                else //uncommitted incomplete us
+                                    json = '{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"<u>' + usid + '</u>","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}';
+
+                                releaseiterations.push(JSON.parse(json));
+                                userstory[j]['iterations'] = releaseiterations;
+                            }
+                        }
+                    }
+
+                    //if the release is not added, then add the fresh one
+                    if (!foundrelease) {
+                        json = '{"projectid":' + projectid;
+                        json = json + ', "release":"' + relname + '","releaseid":' + relid;
+
+                        if (uscompleted == 1 && uscommited) //committed completed us
+                            json = json + ', "iterations":[{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"<b>' + usid + '</b>","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}]}';
+                        else if (uscompleted == 1 && !uscommited)//uncommitted completed us
+                            json = json + ', "iterations":[{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"<b><u>' + usid + '</u></b>","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}]}';
+                        else if (uscompleted == 0 && uscommited)//committed incomplete us
+                            json = json + ', "iterations":[{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"' + usid + '","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}]}';
+                        else
+                            json = json + ', "iterations":[{"iteration":"' + itrname + '","iterationid":' + itrid + ',"planestimate":' + planestimate + ',"plancompleted":' + plancompleted + ',"storiescomitted":1,"storiescompleted":' + uscompleted + ',"stories":"<u>' + usid + '</u>","totalblockers":' + everblocked + ',"currentblockers":' + blkcnt + ',"defects":' + defects + '}]}';
+                            
+
+                        userstory.push(JSON.parse(json));
+                    }
+                }
+
+                //once all the release and their corresponding iterations are added to the project
+                //now is the time to add the backlog count to the project.
+                //ideally this backlog count is tied to the project as it states the number of userstories/points that are still existing but not 
+                //tied to any sprint. hence the backlog count number will be same for all the sprints shown in the final table of the report
+                //as it is the number as on today.
+                for (var rel = 0; rel < userstory.length; rel++) {
+                    //debugger;
+                    for (var itr = 0; itr < userstory[rel]['iterations'].length; itr++) {
+                        userstory[rel]['iterations'][itr]['backlogcnt'] = backlogcnt;
+
+                        /*
+                        var pointscomp = userstory[rel]['iterations'][itr]['plancompleted'];
+                        pointscomp = (pointscomp == 0) ? backlogcnt : pointscomp;
+                        if (pointscomp == 0 && backlogcnt == 0) {
+                            userstory[rel]['iterations'][itr]['backlogcnt'] = 0 ;
+                        } else {
+                            userstory[rel]['iterations'][itr]['backlogcnt'] = Math.round(backlogcnt / pointscomp);
+                        }
+                        */
+                    }
+                }
+
+                userstory = sortuserstories(userstory);
+                /* Version: 1
+                first version of this script used below logic to calculate plannedest
+                plannedest = sum of story points of all the user stories in a particular iterations
+                however later it was decided to get this value from the iteration object directly.
+                In the iteration object there is a parameter 'PlanEstimate', this value is now treated as plannedest directly
+                if this value is null then plannedest = 0
+
+                below function call is to calculate plannedest by the new approach
+                */
+                /*Version: 2
+                As per version: 2, it is decided that the planestimate be calculated as describer in version: 1 with below change
+                plannedest = sum of story points of all the user stories WHICH ARE COMMITTED AT THE START OF ITERATION in a particular iterations
+                if the US is not committed at the start of iteration then its points are not added to the total points
+                //hence i am commenting below setPlanEstimate funtion now.
+                */
+                //setPlanEstimate();
+
+                /*Version: 1
+                Find the count of defects tied to a user story whose status is not closed at the end of sprint.
+
+                Version: 2
+                Find the count of defects which are tied to a release and Iteration irrespective of weather they are tied to a US or not. Hence below 
+                function is called to update the defects count of all the iterations. Note: the current count followed as per Version:1 will be over written by Version:2 approach.
+                */
+                updatedefectscount();
+                populateIterations();
+
+                //console.log(userstory);
+                $('#dwlstatus').hide();
+            }
+
+            function isuscommitted(revid, itrname, usid) {
+                var booluscommitted = true;
+                var iterstartdate = new Date('2000-01-30'); //some dummy date, if there is no startdate for the iteration, then this dummy date will make sure that the US is shown as committed
+                for (var i = 0; i < iteration.length; i++) {
+                    if (iteration[i]['iteration'] == itrname) {
+                        iterstartdate = new Date(iteration[i]['StartDate']);
+                        break;
+                    }
+                }
+                var searchstring1 = 'ITERATION added [' + itrname + ']';
+                var searchstring2 = '] to [' + itrname + ']'
+                for (var i = 0; i < usrevisionhistory.length; i++) {
+                    var desc = usrevisionhistory[i]['description'];
+                    var revdate = new Date(usrevisionhistory[i]['creationdate']);
+                    if (usrevisionhistory[i]['revisionid'] == revid && (desc.indexOf(searchstring1) >= 0 || desc.indexOf(searchstring2) >= 0) && iterstartdate < revdate) {
+                        booluscommitted = false;
+                        //console.log(usid);
+                        break
+                    }
+                }
+                return booluscommitted;
+            }
+
+
+            function iseverblocked(userstoryid) {
+                var everblocked = false;
+                for (var i = 0; i < blockers.length; i++) {
+                    if (blockers[i]['userstoryid'] == userstoryid) {
+                        everblocked = true;
+                        break;
+                    }
+                }
+                return everblocked ? 1 : 0;
+            }
+
+            function sortuserstories(sus) {
+                var sorteddata = [];
+                for (var j = 0; j < release.length; j++) {
+                    for (var i = 0; i < sus.length; i++) {
+                        if (release[j]['releaseid'] == sus[i]['releaseid']) {
+                            var iterations = sus[i]['iterations'];
+                            iterations.sort(function (a, b) {
+                                var a1 = a.iteration.toLowerCase(), b1 = b.iteration.toLowerCase();
+                                if (a1 == b1) return 0;
+                                return a1 > b1 ? 1 : -1;
+                            });
+                            sus[i]['iterations'] = iterations;
+                            sorteddata.push(sus[i]);
+                        }
+                    }
+                }
+                return sorteddata;
+            }
+
+            function setPlanEstimate() {
+                
+                for (var rel = 0; rel < userstory.length; rel++) {
+                    //debugger;
+                    var currentrelease = userstory[rel];
+                    for (var itr = 0; itr < currentrelease['iterations'].length; itr++) {
+                        currentiteration = currentrelease['iterations'][itr];
+                        var planest = getPlanEsimate(currentiteration.iterationid);
+                        userstory[rel]['iterations'][itr]['planestimate'] = planest;
+                    }
+                }
+            }
+
+            function getPlanEsimate(iterationid) {
+                //debugger;
+                var planest = 0;
+                for (var itr = 0; itr < iteration.length; itr++) {
+                    if (iteration[itr].iterationid == iterationid) {
+                        planest = iteration[itr].plannedest;
+                    }
+                }
+                return planest;
+            }
+
+            function updatedefectscount() {
+                for (var rel = 0; rel < userstory.length; rel++) {
+                    //debugger;
+                    var currentrelease = userstory[rel];
+                    for (var itr = 0; itr < currentrelease['iterations'].length; itr++) {
+                        currentiteration = currentrelease['iterations'][itr];
+                        var defcount = getDefectCount(currentrelease.release, currentiteration.iteration);
+                        userstory[rel]['iterations'][itr]['defects'] = defcount;
+                    }
+                }
+            }
+
+            function getDefectCount(releasename, iterationname) {
+                var defcount = 0;
+                for (var i = 0; i < totaldefects.length; i++) {
+                    var item = totaldefects[i];
+                    if (item['Release'] && item['Release']['_refObjectName'] == releasename && item['Iteration'] && item['Iteration']['_refObjectName'] == iterationname) {
+                        defcount = defcount + 1;
+                    }
+                }
+                return defcount;
+            }
+
+            function populateIterations() {
+                //debugger;
+                $('#iterations').html('');
+                var iterhtml = '<iteration multiple="multiple" style="width: 500px">';
+
+                for (var i = 0; i < userstory.length; i++) {
+
+                    iterhtml = iterhtml + '<optgroup label="' + userstory[i]['release'] + '">';
+
+
+                    var iterations = userstory[i]['iterations'];
+                    for (var t = 0; t < iterations.length; t++) {
+                        var itrid = iterations[t]['iterationid'];
+                        var itrname = iterations[t]['iteration'];
+                        iterhtml = iterhtml + '<option value="' + userstory[i]['releaseid'] + '-' + itrid + '">' + itrname + '</option>';
+                    }
+                    iterhtml = iterhtml + '</optgroup>';
+                }
+                iterhtml = iterhtml + '</iteration>';
+                $('#iterations').html(iterhtml);
+                $('iteration').multipleSelect({
+                    placeholder: "Select iterations",
+                    selectAll: false,
+                    onClick: function (view) {
+                        var selectediterations = ('' + $("iteration").multipleSelect("getSelects") + '').split(",");
+                        generateinfo(selectediterations.sort());
+                    },
+                    onOptgroupClick: function (view) {
+                        var selectediterations = ('' + $("iteration").multipleSelect("getSelects") + '').split(",");
+                        generateinfo(selectediterations.sort());
+                    },
+                    filter: false
+                });
+            }
+
+            function generateinfo(selectediterations) {
+                //debugger;
+
+                itergraphdata = [];
+                
+
+                /*
+                Below if condition is to handle situation when you select few sprints then the graph is shown
+                but when you unselect the selected values then this function "generateinfo" is called with parameter "selectediterations"
+                as null or empty, in this case if the below if condition does not exists then Release = none and Iteration = none graph 
+                is populated by default, to avoid that situation below if condition is needed.
+                */
+                if (selectediterations == '' || selectediterations == null) {
+                    //generatechart();
+					//console.log(itergraphdata);
+                    generatechart1();
+                    createtable();
+                    return;
+                }
+                
+
+                for (var r = release.length - 1; r >= 0; r--) {
+                    for (var i = 0; i < userstory.length; i++) {
+                        if (release[r]['releaseid'] == userstory[i]['releaseid']) {
+                            for (var k = 0; k < selectediterations.length; k++) {
+                                var relid = selectediterations[k].substring(0, selectediterations[k].indexOf('-'));
+                                var itrid = selectediterations[k].substring(selectediterations[k].indexOf('-') + 1);
+                                if (userstory[i]['releaseid'] == relid) {
+                                    var iter = userstory[i]['iterations'];
+                                    for (var j = 0; j < iter.length; j++) {
+                                        if (itrid == iter[j]['iterationid']) {
+                                            var storyratio = getratio(iter[j]['storiescomitted'], iter[j]['storiescompleted']);
+                                            var pointratio = getratio(iter[j]['planestimate'], iter[j]['plancompleted']);
+                                            var avgvel = getavgvelocity(relid, itrid);
+                                            var velvar = getvelocityvariance(iter[j]['plancompleted'], avgvel);
+                                            var json = '{"Sprint":"' + iter[j]['iteration'] + '"';
+                                            json = json + ', "StoryRatio":' + storyratio;
+                                            json = json + ', "PointRatio":' + pointratio;
+                                            json = json + ', "AvgVelocity":' + avgvel;
+                                            json = json + ', "VelVariation":' + velvar;
+                                            json = json + ', "Blockers":' + iter[j]['currentblockers'];
+                                            json = json + ', "TotalBlockers":' + iter[j]['totalblockers'];
+                                            json = json + ', "Quality":' + iter[j]['defects'];
+                                            json = json + ', "Backlog":' + iter[j]['backlogcnt'];
+                                            json = json + ', "Stories":"' + iter[j]['stories'] + '"';
+                                            json = json + ', "PointsComitted":' + iter[j]['planestimate'];
+                                            json = json + ', "PointsCompleted":' + iter[j]['plancompleted'];
+                                            json = json + ', "StoriesComitted":' + iter[j]['storiescomitted'];
+                                            json = json + ', "StoriesCompleted":' + iter[j]['storiescompleted'];
+                                            json = json + '}';
+                                            itergraphdata.push(JSON.parse(json));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                //generatechart();
+				//console.log(itergraphdata);
+                generatechart1();
+                calculatetotalrow();
+                createtable();
+            }
+
+            function getratio(comitted, completed) {
+                //storyratio = (completed/comitted)*100
+                //pointratio = (completed/comitted)*100
+                if (comitted == 0)
+                    return 0;
+                else
+                    return Math.round((completed / comitted) * 100);
+            }
+
+            function getavgvelocity(relid, itrid) {
+                //debugger;
+                //avgvelocity = (currentreleasepointscompleted+previousreleasepointscompleted+previoustopreviousreleasepointscompleted)/3;
+                var avgvel = 0;
+                var avgcnt = 3;
+                var leafend = false;
+                for (var i = 0; i < userstory.length; i++) {
+                    if (userstory[i]['releaseid'] == relid) {
+                        var iterations = userstory[i]['iterations'];
+                        for (var j = 0; j < iterations.length; j++) {
+                            if (iterations[j]['iterationid'] == itrid) {
+                                var currentrel = i;
+                                var currentitr = j;
+                                while (avgcnt > 0) {
+                                    if (currentitr - 1 >= 0) {
+                                        var curritername = userstory[currentrel]['iterations'][currentitr - 1]['iteration'];
+                                        curritername = curritername.replace(/\s/g, "").toLowerCase();
+                                        if (curritername.indexOf("sprint1") >= 0 || curritername.indexOf("sprint2") >= 0 || curritername.indexOf("sprint3") >= 0) {
+                                            avgvel = avgvel + userstory[currentrel]['iterations'][currentitr - 1]['plancompleted'];
+                                            avgcnt = avgcnt - 1;
+                                        }
+                                        currentitr = currentitr - 1;
+                                    } else {
+                                        if (currentrel + 1 < userstory.length) {
+                                            currentrel = currentrel + 1;
+                                            currentitr = userstory[currentrel]['iterations'].length;
+                                        }
+                                        else {
+                                            leafend = true;
+                                            avgcnt = 0;
+                                            avgvel = userstory[i]['iterations'][j]['plancompleted'];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!leafend)
+                    avgvel = Math.round(avgvel / 3);
+
+                return avgvel;
+            }
+
+            function getvelocityvariance(pointscompleted, averagevelocity) {
+                //Velocity Variance = ((pointscompleted-averagevelocity)/averagevelocity)*100;
+                if (averagevelocity == 0)
+                    return 0;
+                else
+                    return Math.round(((pointscompleted - averagevelocity) / averagevelocity) * 100);
+
+            }
+
+            function generatechart1() {
+                //console.log(itergraphdata);
+                $('#jqChart1').jqChart({
+                    title: { text: 'Graph' },
+                    border: { strokeStyle: '#6ba851' },
+                    legend: { location: 'top' },
+                    animation: { duration: 0.5 },
+                    shadows: { enabled: true },
+                    dataSource: itergraphdata,
+                    axes: [
+                        {
+                            name: 'x',
+                            location: 'bottom',
+                            labels: { font: '12px sans-serif', angle: -45 }
+                        },
+                        {
+                            name: 'y1',
+                            location: 'left'
+                        },
+                        {
+                            name: 'y2',
+                            location: 'right',
+                            strokeStyle: '#CDDC39',
+                            majorGridLines: { strokeStyle: '#CDDC39' },
+                            majorTickMarks: { strokeStyle: '#CDDC39' }
+                        }
+                    ],
+                    series: [
+                        {
+                            type: 'column',
+                            title: 'StoryRatio',
+                            fillStyle: '#418CF0',
+                            axisY: 'y1',
+                            xValuesField: { name: 'Sprint', type: 'int' },
+                            yValuesField: 'StoryRatio',
+                            //labels: { font: '12px sans-serif', fillStyle: '#418CF0' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'PointRatio',
+                            fillStyle: '#FCB441',
+                            axisY: 'y1',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'PointRatio',
+                            //labels: { font: '12px sans-serif', fillStyle: '#418CF0' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'PointsCommitted',
+                            fillStyle: '#E0400A',
+                            axisY: 'y1',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'PointsComitted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#E0400A' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'PointsCompleted',
+                            axisY: 'y1',
+                            fillStyle: '#EF9A9A',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'PointsCompleted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#EF9A9A' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'StoriesCommitted',
+                            fillStyle: '#CFD8DC',
+                            axisY: 'y2',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'StoriesComitted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#607D8B' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'StoriesCompleted',
+                            fillStyle: '#795548',
+                            axisY: 'y2',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'StoriesCompleted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#78909C' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'line',
+                            title: 'AvgVelocity',
+                            fillStyle: '#795548',
+                            axisY: 'y1',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'AvgVelocity',
+                            //labels: { font: '12px sans-serif', fillStyle: '#795548' },
+                            cursor: 'pointer'
+                        },
+
+                        {
+                            type: 'column',
+                            title: 'Blockers in sprint',
+                            fillStyle: '#009688',
+                            axisY: 'y2',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'TotalBlockers',
+                            //labels: { font: '12px sans-serif', fillStyle: '#009688' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'Outstanding blockers',
+                            fillStyle: '#26A69A',
+                            axisY: 'y2',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'Blockers',
+                            //labels: { font: '12px sans-serif', fillStyle: '#26A69A' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'Escaped defects',
+                            fillStyle: '#9C27B0',
+                            axisY: 'y2',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'Quality',
+                            //labels: { font: '12px sans-serif', fillStyle: '#9C27B0' },
+                            cursor: 'pointer'
+                        }
+                    ]
+                });
+
+            }
+            
+            function generatechart() {
+                //console.log(itergraphdata);
+                $('#jqChart').jqChart({
+                    title: { text: 'Graph' },
+                    legend: { location: 'top' },
+                    animation: { duration: 0.5 },
+                    shadows: { enabled: true },
+                    dataSource: itergraphdata,
+                    axes: [
+                        {
+                            location: 'bottom',
+                            labels: { font: '12px sans-serif', angle: -45 }
+                        }
+                    ],
+                    series: [
+                        {
+                            type: 'column',
+                            title: 'StoryRatio',
+                            fillStyle: '#418CF0',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'StoryRatio',
+                            //labels: { font: '12px sans-serif', fillStyle: '#418CF0' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'PointRatio',
+                            fillStyle: '#FCB441',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'PointRatio',
+                            //labels: { font: '12px sans-serif', fillStyle: '#FCB441' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'PointsCommitted',
+                            fillStyle: '#E0400A',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'PointsComitted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#E0400A' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'PointsCompleted',
+                            fillStyle: '#EF9A9A',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'PointsCompleted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#EF9A9A' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'StoriesCommitted',
+                            fillStyle: '#CFD8DC',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'StoriesComitted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#607D8B' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'StoriesCompleted',
+                            fillStyle: '#795548',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'StoriesCompleted',
+                            //labels: { font: '12px sans-serif', fillStyle: '#78909C' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'line',
+                            title: 'AvgVelocity',
+                            fillStyle: '#795548',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'AvgVelocity',
+                            //labels: { font: '12px sans-serif', fillStyle: '#795548' },
+                            cursor: 'pointer'
+                        },
+                                                
+                        {
+                            type: 'column',
+                            title: 'Blockers in sprint',
+                            fillStyle: '#009688',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'TotalBlockers',
+                            //labels: { font: '12px sans-serif', fillStyle: '#009688' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'Outstanding blockers',
+                            fillStyle: '#26A69A',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'Blockers',
+                            //labels: { font: '12px sans-serif', fillStyle: '#26A69A' },
+                            cursor: 'pointer'
+                        },
+                        {
+                            type: 'column',
+                            title: 'Escaped defects',
+                            fillStyle: '#9C27B0',
+                            xValuesField: { name: 'Sprint', type: 'string' },
+                            yValuesField: 'Quality',
+                            //labels: { font: '12px sans-serif', fillStyle: '#9C27B0' },
+                            cursor: 'pointer'
+                        }
+                    ]
+                });
+            }
+            
+            function createtable() {
+                //debugger;
+
+                if (table == null) {
+                    table = $('#graphtable').DataTable({
+                        paging: false,
+                        searching: false,
+                        info: false,
+                        scrollX: true,
+                        scrollY: 300,
+                        scrollCollapse: true,
+                        //fixedColumns: { leftColumns: 1 },
+
+                        columns: [
+                            { data: null, render: 'ID', title: "ID" },
+                            { data: null, render: 'Sprint', title: "Iteration Name" },
+                            { data: null, render: 'StoryRatio', title: "Story Ratio" },
+                            { data: null, render: 'PointRatio', title: "Point Ratio" },
+                            { data: null, render: 'AvgVelocity', title: "Average Velocity" },
+                            { data: null, render: 'VelVariation', title: "Velocity Variation" },
+                            { data: null, render: 'PointsComitted', title: "Points Committed" },
+                            { data: null, render: 'PointsCompleted', title: "Points Completed" },                            
+                            { data: null, render: 'Quality', title: "Escaped Defects" },
+                            { data: null, render: 'Backlog', title: "Backlog Count" },
+                            { data: null, render: 'Stories', title: "User stories" },
+                            { data: null, render: 'StoriesComitted', title: "Stories Committed" },
+                            { data: null, render: 'StoriesCompleted', title: "Stories Completed" },
+                            { data: null, render: 'TotalBlockers', title: "Blockers in-sprint" },
+                            { data: null, render: 'Blockers', title: "Outstanding Blockers" }                            
+                        ],
+                        rowCallback: function (row, data, index) {
+                            if (data['_Sprint'] == "Total") {
+                                $('td', row).css('background-color', '#C5E1A5');
+                            }
+                        },
+                        fixedColumns: { leftColumns: 2 },
+                        columnDefs: [
+                                    {
+                                        "targets": [0,9],
+                                        "visible": false
+                                    }
+                        ],
+                        dom: 'Bfrtip',
+                        buttons: ['copy', 'csv', 'excel', 'print']
+                    });
+                } else
+                    table.rows().remove().draw();
+
+                for (var i = 0; i < itergraphdata.length; i++) {
+                    table.row.add(new formattablerow(i + 1, itergraphdata[i]['Sprint'], itergraphdata[i]['StoryRatio'], itergraphdata[i]['PointRatio'], itergraphdata[i]['AvgVelocity'], itergraphdata[i]['VelVariation'], itergraphdata[i]['TotalBlockers'], itergraphdata[i]['Blockers'], itergraphdata[i]['Quality'], itergraphdata[i]['Backlog'], itergraphdata[i]['Stories'], itergraphdata[i]['PointsComitted'], itergraphdata[i]['PointsCompleted'], itergraphdata[i]['StoriesComitted'], itergraphdata[i]['StoriesCompleted']));
+                }
+                table.draw();
+            }
+
+            function formattablerow(ID, Sprint, StoryRatio, PointRatio, AvgVelocity, VelVariation, TotalBlockers, Blockers, Quality, Backlog, Stories, PointsComitted, PointsCompleted, StoriesComitted, StoriesCompleted) {
+                //debugger;
+                this._ID = ID;
+                this._Sprint = Sprint;
+                this._StoryRatio = StoryRatio;
+                this._PointRatio = PointRatio;
+                this._AvgVelocity = AvgVelocity;
+                this._VelVariation = VelVariation;
+                this._TotalBlockers = TotalBlockers;
+                this._Blockers = Blockers;
+                this._Quality = Quality;
+                this._Backlog = Backlog;
+                this._PointsComitted = PointsComitted;
+                this._PointsCompleted = PointsCompleted;
+                this._StoriesComitted = StoriesComitted;
+                this._StoriesCompleted = StoriesCompleted;
+                this._Stories = Stories;
+
+                this.ID = function () {
+                    return '<p style="font-size:12px;margin:0">' + this._ID + '</p>';
+                }
+
+                this.Sprint = function () {
+                    if (this._Sprint == "Total")
+                        return '<p style="font-size:16px;font-weight:bold;margin-left:-15;margin-right:-10;margin-top:0;margin-bottom:0;width:100px;">' + this._Sprint + '</p>';
+                    else
+                        return '<p style="font-size:12px;margin:0;width:100px;">' + this._Sprint + '</p>';
+                };
+
+                this.StoryRatio = function () {
+                    if (this._StoryRatio >= 90)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._StoryRatio + '%</p>';
+                    else if (this._StoryRatio >= 80 && this._StoryRatio < 90)
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._StoryRatio + '%</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._StoryRatio + '%</p>';
+                };
+
+                this.PointRatio = function () {
+                    if (this._PointRatio >= 90)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._PointRatio + '%</p>';
+                    else if (this._PointRatio >= 80 && this._PointRatio < 90)
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._PointRatio + '%</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._PointRatio + '%</p>';
+                };
+
+                this.AvgVelocity = function () {
+                    if (this._AvgVelocity >= 60)
+                        return '<p style="color:black;font-weight:bold;font-size:12px;margin:0">' + this._AvgVelocity + '</p>';
+                    else if (this._AvgVelocity >= 50 && this._AvgVelocity < 60)
+                        return '<p style="color:black;font-weight:bold;font-size:12px;margin:0">' + this._AvgVelocity + '</p>';
+                    else
+                        return '<p style="color:black;font-weight:bold;font-size:12px;margin:0">' + this._AvgVelocity + '</p>';
+                };
+
+                this.VelVariation = function () {
+                    if (this._VelVariation >= -25 && this._VelVariation <= 25)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._VelVariation + '%</p>';
+                    else if ((this._VelVariation >= -40 && this._VelVariation < -25) || (this._VelVariation > 25 && this._VelVariation <= 40))
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._VelVariation + '%</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._VelVariation + '%</p>';
+                };
+
+                this.TotalBlockers = function () {
+                    if (this._TotalBlockers <= 0)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._TotalBlockers + '</p>';
+                    else if (this._TotalBlockers > 0 && this._TotalBlockers < 3)
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._TotalBlockers + '</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._TotalBlockers + '</p>';
+                };
+
+                this.Blockers = function () {
+                    if (this._Blockers <= 2)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._Blockers + '</p>';
+                    else if (this._Blockers > 2 && this._Blockers < 4)
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._Blockers + '</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._Blockers + '</p>';
+                };
+
+                this.Quality = function () {
+                    if (this._Quality <= 2)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._Quality + '</p>';
+                    else if (this._Quality > 2 && this._Quality < 4)
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._Quality + '</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._Quality + '</p>';
+                };
+
+                this.Backlog = function () {
+                    if (this._Backlog > 3)
+                        return '<p style="color:green;font-weight:bold;font-size:12px;margin:0">' + this._Backlog + '</p>';
+                    else if (this._Backlog > 1 && this._Backlog < 4)
+                        return '<p style="color:orange;font-weight:bold;font-size:12px;margin:0">' + this._Backlog + '</p>';
+                    else
+                        return '<p style="color:red;font-weight:bold;font-size:12px;margin:0">' + this._Backlog + '</p>';
+                };
+
+                this.PointsComitted = function () {
+                    return '<p style="font-size:12px;margin:0">' + this._PointsComitted + '</p>';
+                };
+
+                this.PointsCompleted = function () {
+                    return '<p style="font-size:12px;margin:0">' + this._PointsCompleted + '</p>';
+                };
+
+                this.StoriesComitted = function () {
+                    return '<p style="font-size:12px;margin:0">' + this._StoriesComitted + '</p>';
+                };
+
+                this.StoriesCompleted = function () {
+                    return '<p style="font-size:12px;margin:0">' + this._StoriesCompleted + '</p>';
+                };
+
+                this.Stories = function () {
+                    return '<p style="font-size:12px;margin:0">' + this._Stories + '</p>';
+                }
+            }
+
+            function calculatetotalrow() {
+                var i = 0;
+                var totalptscomitted, totalptscompleted, totalstrcomitted, totalstrcompleted, totalavgvel, totalvelvar, totalblkinsprint, totalosblks, totalqty, totalbacklogiter;
+                totalptscomitted = totalptscompleted = totalstrcomitted = totalstrcompleted = totalavgvel = totalvelvar = totalblkinsprint = totalosblks = totalqty = totalbacklogiter = 0;
+                for (; i < itergraphdata.length; i++) {
+                    totalptscomitted = totalptscomitted + itergraphdata[i]['PointsComitted'];
+                    totalptscompleted = totalptscompleted + itergraphdata[i]['PointsCompleted'];
+                    totalstrcomitted = totalstrcomitted + itergraphdata[i]['StoriesComitted'];
+                    totalstrcompleted = totalstrcompleted + itergraphdata[i]['StoriesCompleted'];
+                    totalavgvel = totalavgvel + itergraphdata[i]['AvgVelocity'];
+                    totalvelvar = totalvelvar + itergraphdata[i]['VelVariation'];
+                    totalblkinsprint = totalblkinsprint + itergraphdata[i]['Blockers'];
+                    totalosblks = totalosblks + itergraphdata[i]['TotalBlockers'];
+                    totalqty = totalqty + itergraphdata[i]['Quality'];
+                    totalbacklogiter = totalbacklogiter + +itergraphdata[i]['Backlog'];
+                }
+                var totalptsratio = getratio(totalptscomitted, totalptscompleted);
+                var totalstrratio = getratio(totalstrcomitted, totalstrcompleted);
+                totalavgvel = Math.round(totalavgvel / i);
+                totalvelvar = Math.round(totalvelvar / i);
+                totalbacklogiter = Math.round(totalbacklogiter / i);
+                //backlogiter value is same for all elements in the array
+                //hence taking the first value
+                //var backlogiter = itergraphdata[0]['Backlog'];
+                //backlogiter = Math.round(backlogiter / (totalptscompleted/i))
+
+                var json = '{"Sprint":"Total"';
+                json = json + ', "StoryRatio":' + totalstrratio;
+                json = json + ', "PointRatio":' + totalptsratio;
+                json = json + ', "AvgVelocity":' + totalavgvel;
+                json = json + ', "VelVariation":' + totalvelvar;
+                json = json + ', "Blockers":' + totalblkinsprint;
+                json = json + ', "TotalBlockers":' + totalosblks;
+                json = json + ', "Quality":' + totalqty;
+                json = json + ', "Backlog":' + totalbacklogiter;
+                json = json + ', "Stories":"N/A"';
+                json = json + ', "PointsComitted":' + totalptscomitted;
+                json = json + ', "PointsCompleted":' + totalptscompleted;
+                json = json + ', "StoriesComitted":' + totalstrcomitted;
+                json = json + ', "StoriesCompleted":' + totalstrcompleted;
+                json = json + '}';
+                itergraphdata.push(JSON.parse(json));
+            }
+        });
+    </script>
+</head>
+<body>
+    <div>
+        <div id="dwlstatus" style="display:none;background-color:black;color:white;margin-bottom:2px">testing</div>
+        <div>
+            <div id="iterations" style="width: 65%;margin-bottom:5px;float:left"></div>
+            <label id="bklgcnt" style="float:right;color:green;font-weight:bold;font-size:12px"></label>
+        </div>
+        <table id="graphtable" class="cell-border display" cellspacing="0"  width="100%" style="margin-bottom:5px"></table>
+        <div id="jqChart1" style="width: 99%; height: 500px;float:left;margin-top:15px;"></div>
+        <!--<div id="jqChart" style="width: 99%; height: 500px;float:left;margin-top:15px"></div>-->
+    </div>
+</body>
+</html>
